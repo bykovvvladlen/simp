@@ -1,4 +1,4 @@
-﻿var simp = (function() {
+﻿window.simp = (function() {
   let _selector, _callback, _current, _listeners, _tree;
 
   function init() {
@@ -12,10 +12,10 @@
           data: Object.assign({}, data),
           create: create
         }
-        
+
         return Object.assign(copy, settings);
       }
-      
+
       let settings = { template: node }
       let node_prepared = copy_node(settings, node);
 
@@ -37,7 +37,7 @@
           Object.keys(settings).forEach(key => {
             let val = settings[key];
             current().data[key] = val;
-            
+
             let editable = elem.querySelector(`div[contenteditable='true'][data-simp='${key}']`);
             if (editable) editable.innerText = val;
             else elem.querySelector(`input[data-simp='${key}']`).value = val;
@@ -65,14 +65,14 @@
         if (!_listeners[obj]) _listeners[obj] = {};
         _listeners[obj][name] = listener;
       }
-      
+
       function removeEventListeners(obj) {
         if (_listeners[obj]) Object.keys(_listeners[obj]).forEach(name => {
           obj.removeEventListener(name, _listeners[obj][name]);
         })
         _listeners = {}
       }
-      
+
       let node = current();
       let inputs = node.dom_element.querySelectorAll(`input, div[contenteditable='true']`);
       inputs.forEach((input, index) => {
@@ -111,14 +111,14 @@
     // Отобразить узел
     function show(extra) {
       hide();
-      
+
       function createElement(str) {
         let div = document.createElement('div');
         div.innerHTML = str;
         return div.firstChild;
       }
 
-      let node = current(); 
+      let node = current();
       let dom_element = _selector.appendChild(createElement(node.html));
       node.visible = true;
       node.dom_element = dom_element;
