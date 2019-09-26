@@ -1,8 +1,8 @@
-var simp = (function() {
+п»їvar simp = (function() {
   let _selector, _callback, _current, _listeners, _tree;
 
   function init() {
-    // Добавить новый узел в дерево
+    // Р”РѕР±Р°РІРёС‚СЊ РЅРѕРІС‹Р№ СѓР·РµР» РІ РґРµСЂРµРІРѕ
     function insert(node) {
       _current = _tree.length;
 
@@ -48,7 +48,7 @@ var simp = (function() {
       _tree.push(node_prepared);
     }
 
-    // Закрыть узел
+    // Р—Р°РєСЂС‹С‚СЊ СѓР·РµР»
     function hide() {
       _tree.filter(e => e.position() != _current && e.visible).forEach(e => {
         let html = e.dom_element.outerHTML;
@@ -58,7 +58,7 @@ var simp = (function() {
       });
     }
 
-    // Перебиндить инпуты в узле
+    // РџРµСЂРµР±РёРЅРґРёС‚СЊ РёРЅРїСѓС‚С‹ РІ СѓР·Р»Рµ
     function rebind() {
       function addEventListener(obj, name, listener) {
         obj.addEventListener(name, listener);
@@ -108,7 +108,7 @@ var simp = (function() {
       });
     }
 
-    // Отобразить узел
+    // РћС‚РѕР±СЂР°Р·РёС‚СЊ СѓР·РµР»
     function show(extra) {
       hide();
       
@@ -140,24 +140,24 @@ var simp = (function() {
       if (_callback) _callback();
     }
 
-    // Открыть узел
+    // РћС‚РєСЂС‹С‚СЊ СѓР·РµР»
     function open(node, extra) {
       insert(node);
       show(extra);
     }
 
-    // Текущий узел
+    // РўРµРєСѓС‰РёР№ СѓР·РµР»
     function current() {
       return _tree[_current];
     }
 
-    // Предыдущий узел
+    // РџСЂРµРґС‹РґСѓС‰РёР№ СѓР·РµР»
     function previous(step = 1) {
       let index = Math.max(0, _current - Math.max(Math.abs(step), 1));
       return _tree[index];
     }
 
-    // Вернуться на предыдущий узел
+    // Р’РµСЂРЅСѓС‚СЊСЃСЏ РЅР° РїСЂРµРґС‹РґСѓС‰РёР№ СѓР·РµР»
     function back(step = 1) {
       if (_current != 0) {
         if (_current - step < 0) step = _current;
@@ -173,7 +173,7 @@ var simp = (function() {
       }
     }
 
-    // Возвращает объект данных со всех узлов
+    // Р’РѕР·РІСЂР°С‰Р°РµС‚ РѕР±СЉРµРєС‚ РґР°РЅРЅС‹С… СЃРѕ РІСЃРµС… СѓР·Р»РѕРІ
     function fetch() {
       return _tree.reduce((acc, elem, index) => {
         Object.keys(elem.data).forEach(key => {
@@ -184,12 +184,12 @@ var simp = (function() {
       }, {});
     }
 
-    // Возвращает объект данных узла (текущего или смещенного)
+    // Р’РѕР·РІСЂР°С‰Р°РµС‚ РѕР±СЉРµРєС‚ РґР°РЅРЅС‹С… СѓР·Р»Р° (С‚РµРєСѓС‰РµРіРѕ РёР»Рё СЃРјРµС‰РµРЅРЅРѕРіРѕ)
     function data(step = 0) {
       return _tree[_current - Math.min(_current, Math.abs(step))].data;
     }
 
-    // Применить новые данные для текущего узла
+    // РџСЂРёРјРµРЅРёС‚СЊ РЅРѕРІС‹Рµ РґР°РЅРЅС‹Рµ РґР»СЏ С‚РµРєСѓС‰РµРіРѕ СѓР·Р»Р°
     function set(settings) {
       current().set(settings);
     }
