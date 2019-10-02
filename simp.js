@@ -2,24 +2,33 @@
   // Список всех доступных компонентов
   let componentsList = [];
   
+  // При вызове simp() отдаем новый вью
   var simp = function(selector, renderCallback) {
     if (!(this instanceof simp)) {
       return new simp(selector, renderCallback);
     }
     
+    // Ищем по селектору элемент и присваиваем его вместо первого
     let _selector = document.querySelector(selector || 'body'),
+      // Колбэк, вызываемый при рендере узла
       _renderCallback = renderCallback,
+      // Список эвент листенеров
       _listenersList = {},
+      // Дерево узлов
       _tree = [],
+      // Индекс текущего узла
       _current,
+      // Текущий вью
       _view;
     
+    // Добавить эвент листенер
     function addEventListener(obj, name, listener) {
       obj.addEventListener(name, listener);
       if (!_listenersList[obj]) _listenersList[obj] = {};
       _listenersList[obj][name] = listener;
     }
 
+    // Удалить все эвент листенеры объекта
     function removeEventListeners(obj) {
       if (_listenersList[obj]) Object.keys(_listenersList[obj]).forEach(name => {
         obj.removeEventListener(name, _listenersList[obj][name]);
@@ -27,6 +36,7 @@
       _listenersList = {};
     }
     
+    // Создает элемент из строки
     function createElement(str) {
       let div = document.createElement('div');
       div.innerHTML = str;
@@ -35,35 +45,51 @@
     
     // Подготовить хранилище узла к работе
     function prepareStorageFor(node) {
+      // Само хранилище в замыкании
       let copy = Object.assign({}, node.storage);
-      let callbacks = {
-        list: {
-          incoming: [],
-          outcoming: []
-        },
-        add: function(fn, group = 'incoming') {
-          this.list[group].push(fn)
-        },
-        clear: function(group = 'incoming') {
-          this.list[group] = [];
-        },
-        fire: function(changes, group = 'incoming') {
-          this.list[group].forEach(fn => fn(changes));
-        } 
+      
+      // Список колбэков (general для инпутов, customs для подписки)
+      let list = { general: [], customs: [] };
+      
+      // Добавить колбэк в список
+      function add(callback, group = 'general') {
+        list[group].push(callback);
       }
-
+      
+      // Очистить список колбэков
+      function clear(group = 'general') {
+        list[group] = [];
+      }
+      
+      // Вызвать колбэки
+      function fire(changes, group = 'general') {
+        list[group].forEach(callback => callback(changes));
+      } 
+      
+      // Объект для работы с колбэками
+      let callbacks = {
+        list: list,
+        add: add,
+        clear: clear,
+        fire: fire
+      }
+      
+      // При обращении к storage() возвращаем объект хранилища
       let prepared = function() {
         return copy;
       }
 
+      // Методы для работы с хранилищем
       prepared.__proto__ = {
         set: (settings) => {
           Object.assign(copy, settings);
           callbacks.fire(settings);
+          callbacks.fire(settings, 'customs');
         },
         callbacks: callbacks,
       }
       
+      // Присваиваем узлу подготовленную копию хранилища
       node.storage = prepared;
     }
     
@@ -113,37 +139,53 @@
     // Перебиндить инпуты в узле
     function rebind() {
       let node = current();
+      // Находим все дивы и инпуты, с которых будем собирать данные
       let inputs = node.DOMElement.querySelectorAll(`input, div[contenteditable='true']`);
       
+      // Удаляем предыдущие колбэки, если они есть
       node.storage.callbacks.clear();
       
+      // Проходимся по каждому элементу
       inputs.forEach((input, index) => {
+        // simp-id является ключом инпута в хранилище
         let id = input.getAttribute('data-simp-id');
+        // Является ли элемент дивом
         let isDiv = input.tagName == "DIV";
 
+        // Если у элемента не задан id
         if (!id) {
+          // Генерируем свой
           id = `input${index}`;
           input.setAttribute('data-simp-id', id);
+          // Записываем в хранилище содержимое элемента, если оно есть
           node.storage()[id] = isDiv ? input.innerHTML : input.value;
         }
 
+        // Если id задан и ключ находится в хранилище
         else if (Object.keys(node.storage()).includes(id)) {
+          // Присваиваем элементу значение из хранилища
           if (isDiv) input.innerHTML = node.storage()[id];
           else input.value = node.storage()[id];
         }
 
+        // Если id задан, но в хранилище ключа нет, присваиваем значение элемента
         else node.storage()[id] = isDiv ? input.innerHTML : input.value;
 
+        // Удаляем старые эвент листенеры и добавляем новые
         removeEventListeners(input);
+        // При нажатии на клавишу
         addEventListener(input, 'keyup', () => {
           let value = isDiv ? input.innerHTML : input.value;
+          // Занести новое значение в хранилище
           node.storage()[id] = value;
           
           let changes = {};
           changes[id] = value;
-          node.storage.callbacks.fire(changes, 'outcoming');
+          // Вызовем колбэк хранилища с изминениями
+          node.storage.callbacks.fire(changes, 'customs');
         });
 
+        // При копипасте через 50мс записываем новое значение
         let input_update = ({ currentTarget: target }) => {
           setTimeout(() => {
             node.storage()[id] = target.value;
@@ -153,7 +195,9 @@
         addEventListener(input, 'cut', input_update);
         addEventListener(input, 'paste', input_update);
         
+        // Добавляем колбэк, меняющий содержимое элемента при изменении поля в хранилище
         node.storage.callbacks.add(changes => {
+          // Если id поля есть в изменениях
           if (id in changes) {
             if (isDiv) input.innerHTML = changes[id];
             else input.value = changes[id];
@@ -164,24 +208,32 @@
     
     // Отрисовать текущий узел
     function render(extra) {
+      // Спрячем все старые узлы
       hideNodes();
 
       let node = current();
+      // Создаем элемент
       let DOMElement = _selector.appendChild(createElement(node.markup));
       
       node.visible = true;
       node.DOMElement = DOMElement;
 
+      // Добавляем в хранилище extra
       Object.assign(node.storage(), extra);
+      // Биндим инпуты
       rebind();
       
+      // Вызываем колбэк компонента (узла)
       node.creationCallback.call(_view);
-      if (_renderCallback) _renderCallback();
+      // Если есть, вызываем колбэк при рендере
+      if (_renderCallback) _renderCallback(node);
     }
                
     // Открыть узел
-    function open(node, extra) {
-      insert(node);
+    function open(component, extra) {
+      // Помещаем компонент в дерево
+      insert(component);
+      // Рисуем и биндим
       render(extra);
     }
                                         
@@ -229,24 +281,34 @@
     
     // Найти элемент внутри узла
     function find(selector) {
-      let element = current().DOMElement.querySelector(selector);
-      return window.jQuery ? window.jQuery(element) : element;
+      return current().DOMElement.querySelector(selector);
+    }
+    
+    // Найти элементы внутри узла
+    function findAll(selector) {
+      return current().DOMElement.querySelectorAll(selector);
     }
     
     // Подписаться на изменения в хранилище
     function subscribe(callback, fieldname) {
-      current().storage.callbacks.add(changes => { 
+      // Добавим пользовательский колбэк
+      current().storage.callbacks.add(changes => {
+        // Если подписались на определенное значение, смотрим, есть ли оно
         if (fieldname && fieldname in changes) {
+          // Если есть, отправляем сразу его
           callback(changes[fieldname]);
         } 
         
+        // Если нет, отправляем изменения
         else callback(changes);
-      }, 'outcoming');
+      }, 'customs');
     }
     
+    // Финальный объект вью со всеми функциями
     _view = {
       open: open,
       find: find,
+      findAll: findAll,
       click: click,
       storage: storage,
       set: set,
@@ -259,6 +321,7 @@
       tree: () => _tree
     }
 
+    // Возвращем новый вью
     return _view;
   }
   
