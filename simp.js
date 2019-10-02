@@ -1,219 +1,290 @@
-﻿window.simp = (function() {
-  let _selector, _callback, _current, _listeners, _tree;
-
-  function init() {
-    // Добавить новый узел в дерево
-    function insert(node) {
-      _current = _tree.length;
-
-      function copy_node(settings, { html, data, create }) {
-        let copy = {
-          html: typeof html == 'object' ? Object.assign({}, html) : html,
-          data: Object.assign({}, data),
-          create: create
-        }
-
-        return Object.assign(copy, settings);
-      }
-
-      let settings = { template: node }
-      let node_prepared = copy_node(settings, node);
-
-      let html;
-      if (typeof node.html == 'object') {
-        html = node.html.outerHTML;
-      }
-      else if (!node.html.match(/<|>/g)) {
-        html = document.querySelector(node.html).outerHTML;
-      }
-      else html = node.html;
-
-      node_prepared.html = html;
-      node_prepared.position = () => _tree.indexOf(node_prepared);
-      node_prepared.set = settings => {
-        if (!node_prepared.visible) Object.assign(node_prepared.data, settings);
-        else {
-          let elem = current().dom_element;
-          Object.keys(settings).forEach(key => {
-            let val = settings[key];
-            current().data[key] = val;
-
-            let editable = elem.querySelector(`div[contenteditable='true'][data-simp='${key}']`);
-            if (editable) editable.innerText = val;
-            else elem.querySelector(`input[data-simp='${key}']`).value = val;
-          });
-        }
-      }
-
-      _tree.push(node_prepared);
+﻿(function() {
+  // Список всех доступных компонентов
+  let componentsList = [];
+  
+  var simp = function(selector, renderCallback) {
+    if (!(this instanceof simp)) {
+      return new simp(selector, renderCallback);
+    }
+    
+    let _selector = document.querySelector(selector || 'body'),
+      _renderCallback = renderCallback,
+      _listenersList = {},
+      _tree = [],
+      _current,
+      _view;
+    
+    function addEventListener(obj, name, listener) {
+      obj.addEventListener(name, listener);
+      if (!_listenersList[obj]) _listenersList[obj] = {};
+      _listenersList[obj][name] = listener;
     }
 
-    // Закрыть узел
-    function hide() {
-      _tree.filter(e => e.position() != _current && e.visible).forEach(e => {
-        let html = e.dom_element.outerHTML;
-        e.dom_element.remove();
-        e.visible = false;
-        e.html = html;
+    function removeEventListeners(obj) {
+      if (_listenersList[obj]) Object.keys(_listenersList[obj]).forEach(name => {
+        obj.removeEventListener(name, _listenersList[obj][name]);
       });
+      _listenersList = {};
     }
-
-    // Перебиндить инпуты в узле
-    function rebind() {
-      function addEventListener(obj, name, listener) {
-        obj.addEventListener(name, listener);
-        if (!_listeners[obj]) _listeners[obj] = {};
-        _listeners[obj][name] = listener;
-      }
-
-      function removeEventListeners(obj) {
-        if (_listeners[obj]) Object.keys(_listeners[obj]).forEach(name => {
-          obj.removeEventListener(name, _listeners[obj][name]);
-        })
-        _listeners = {}
-      }
-
-      let node = current();
-      let inputs = node.dom_element.querySelectorAll(`input, div[contenteditable='true']`);
-      inputs.forEach((input, index) => {
-        let datasimp = input.getAttribute('data-simp');
-        let isDiv = input.tagName == "DIV";
-
-        if (!datasimp) {
-          datasimp = `input${index}`;
-          input.setAttribute('data-simp', datasimp);
-          node.data[datasimp] = isDiv ? input.innerHTML : input.value;
-        }
-
-        else if (Object.keys(node.data).includes(datasimp)) {
-          if (isDiv) input.innerHTML = node.data[datasimp];
-          else input.value = node.data[datasimp];
-        }
-
-        else node.data[datasimp] = isDiv ? input.innerHTML : input.value;
-
-        removeEventListeners(input);
-        addEventListener(input, 'keyup', () => {
-          node.data[datasimp] = isDiv ? input.innerHTML : input.value;
-        });
-
-        let input_update = ({ currentTarget: target }) => {
-          setTimeout(() => {
-            node.data[datasimp] = target.value;
-          }, 50);
-        }
-
-        addEventListener(input, 'cut', input_update);
-        addEventListener(input, 'paste', input_update);
-      });
+    
+    function createElement(str) {
+      let div = document.createElement('div');
+      div.innerHTML = str;
+      return div.firstChild;
     }
-
-    // Отобразить узел
-    function show(extra) {
-      hide();
-
-      function createElement(str) {
-        let div = document.createElement('div');
-        div.innerHTML = str;
-        return div.firstChild;
-      }
-
-      let node = current();
-      let dom_element = _selector.appendChild(createElement(node.html));
-      node.visible = true;
-      node.dom_element = dom_element;
-
-      Object.assign(node.data, Object.assign({}, extra));
-      rebind();
-
-      let helper = {
-        click: (selector, fn) => {
-          node.dom_element.querySelector(selector).onclick = fn;
+    
+    // Подготовить хранилище узла к работе
+    function prepareStorageFor(node) {
+      let copy = Object.assign({}, node.storage);
+      let callbacks = {
+        list: {
+          incoming: [],
+          outcoming: []
         },
-        find: selector => {
-          let element = node.dom_element.querySelector(selector);
-          return window.jQuery ? window.jQuery(element) : element;
-        }
+        add: function(fn, group = 'incoming') {
+          this.list[group].push(fn)
+        },
+        clear: function(group = 'incoming') {
+          this.list[group] = [];
+        },
+        fire: function(changes, group = 'incoming') {
+          this.list[group].forEach(fn => fn(changes));
+        } 
       }
 
-      node.create.call(node.data, helper);
-      if (_callback) _callback();
-    }
+      let prepared = function() {
+        return copy;
+      }
 
-    // Открыть узел
-    function open(node, extra) {
-      insert(node);
-      show(extra);
+      prepared.__proto__ = {
+        set: (settings) => {
+          Object.assign(copy, settings);
+          callbacks.fire(settings);
+        },
+        callbacks: callbacks,
+      }
+      
+      node.storage = prepared;
     }
-
+    
+    // Добавить новый узел в дерево
+    function insert(component) {
+      _current = _tree.length;
+      
+      // Прототип узла
+      let node_proto = {
+        position: function() {
+          return _tree.indexOf(this);
+        }
+      }
+      
+      // Создаем из компонента новый экземпляр узла
+      let node = Object.assign({}, component);
+      
+      // Инициализируем методы для работы с хранилищем
+      prepareStorageFor(node);
+      
+      // Готовый узел добавляем в дерево
+      _tree.push(node);
+    }
+    
+    // Скрыть все неиспользуемые узлы
+    function hideNodes() {
+      _tree.filter(e => e != current() && e.visible).forEach(e => {
+        // Сохраняем состояние разметки до востребования
+        e.markup = e.DOMElement.outerHTML;
+        // Соответствующий блок удаляем
+        e.DOMElement.remove();
+        e.visible = false;
+      });
+    }
+    
     // Текущий узел
     function current() {
       return _tree[_current];
     }
-
+    
     // Предыдущий узел
     function previous(step = 1) {
       let index = Math.max(0, _current - Math.max(Math.abs(step), 1));
       return _tree[index];
     }
+    
+    // Перебиндить инпуты в узле
+    function rebind() {
+      let node = current();
+      let inputs = node.DOMElement.querySelectorAll(`input, div[contenteditable='true']`);
+      
+      node.storage.callbacks.clear();
+      
+      inputs.forEach((input, index) => {
+        let id = input.getAttribute('data-simp-id');
+        let isDiv = input.tagName == "DIV";
 
+        if (!id) {
+          id = `input${index}`;
+          input.setAttribute('data-simp-id', id);
+          node.storage()[id] = isDiv ? input.innerHTML : input.value;
+        }
+
+        else if (Object.keys(node.storage()).includes(id)) {
+          if (isDiv) input.innerHTML = node.storage()[id];
+          else input.value = node.storage()[id];
+        }
+
+        else node.storage()[id] = isDiv ? input.innerHTML : input.value;
+
+        removeEventListeners(input);
+        addEventListener(input, 'keyup', () => {
+          let value = isDiv ? input.innerHTML : input.value;
+          node.storage()[id] = value;
+          
+          let changes = {};
+          changes[id] = value;
+          node.storage.callbacks.fire(changes, 'outcoming');
+        });
+
+        let input_update = ({ currentTarget: target }) => {
+          setTimeout(() => {
+            node.storage()[id] = target.value;
+          }, 50);
+        }
+
+        addEventListener(input, 'cut', input_update);
+        addEventListener(input, 'paste', input_update);
+        
+        node.storage.callbacks.add(changes => {
+          if (id in changes) {
+            if (isDiv) input.innerHTML = changes[id];
+            else input.value = changes[id];
+          }
+        });
+      });
+    }
+    
+    // Отрисовать текущий узел
+    function render(extra) {
+      hideNodes();
+
+      let node = current();
+      let DOMElement = _selector.appendChild(createElement(node.markup));
+      
+      node.visible = true;
+      node.DOMElement = DOMElement;
+
+      Object.assign(node.storage(), extra);
+      rebind();
+      
+      node.creationCallback.call(_view);
+      if (_renderCallback) _renderCallback();
+    }
+               
+    // Открыть узел
+    function open(node, extra) {
+      insert(node);
+      render(extra);
+    }
+                                        
     // Вернуться на предыдущий узел
     function back(step = 1) {
       if (_current != 0) {
         if (_current - step < 0) step = _current;
         while (step > 0) {
           _current -= 1;
-          hide();
+          hideNodes();
 
           _tree.pop();
           step--;
         }
 
-        show();
+        render();
       }
     }
-
+                                                 
     // Возвращает объект данных со всех узлов
     function fetch() {
       return _tree.reduce((acc, elem, index) => {
-        Object.keys(elem.data).forEach(key => {
-          acc[key] = elem.data[key];
+        Object.keys(elem.storage()).forEach(key => {
+          acc[key] = elem.storage()[key];
         });
 
         return acc;
       }, {});
     }
-
+                                                 
     // Возвращает объект данных узла (текущего или смещенного)
-    function data(step = 0) {
-      return _tree[_current - Math.min(_current, Math.abs(step))].data;
+    function storage(step = 0) {
+      return _tree[_current - Math.min(_current, Math.abs(step))].storage();
     }
-
-    // Применить новые данные для текущего узла
+                   
+    // Поместить новые значения в хранилище
     function set(settings) {
-      current().set(settings);
+      current().storage.set(settings);
     }
 
-    return {
-      set: set,
+    // Подписаться на клик элемента внутри узла
+    function click(selector, fn) {
+      current().DOMElement.querySelector(selector).onclick = fn;
+    }
+    
+    // Найти элемент внутри узла
+    function find(selector) {
+      let element = current().DOMElement.querySelector(selector);
+      return window.jQuery ? window.jQuery(element) : element;
+    }
+    
+    // Подписаться на изменения в хранилище
+    function subscribe(callback, fieldname) {
+      current().storage.callbacks.add(changes => { 
+        if (fieldname && fieldname in changes) {
+          callback(changes[fieldname]);
+        } 
+        
+        else callback(changes);
+      }, 'outcoming');
+    }
+    
+    _view = {
       open: open,
-      curr: current,
+      find: find,
+      click: click,
+      storage: storage,
+      set: set,
+      fetch: fetch,
+      current: current,
       prev: previous,
       back: back,
-      tree: _tree,
-      data: data,
-      fetch: fetch,
-      rebind: rebind
+      rebind: rebind,
+      subscribe: subscribe,
+      tree: () => _tree
     }
-  }
 
-  return (selector, callback) => {
-    _selector = document.querySelector(selector || 'body');
-    _callback = callback;
-    _listeners = {};
-    _tree = [];
-
-    document.querySelector('.forsimp').style.display = "none";
-    return init();
+    return _view;
   }
+  
+  // Создать компонент
+  function createComponent(selector, creationCallback, storage = {}) {
+    let component = {
+      selector: selector,
+      // Создаем новый экземпляр хранилища
+      storage: Object.assign({}, storage),
+      creationCallback: creationCallback,
+      // Выбираем по селектору блок с разметкой
+      markup: document.querySelector(selector).outerHTML
+    }
+    
+    // Скрываем родительский элемент
+    document.querySelector(selector).style.display = "none";
+    
+    // Добавим в общий список компонентов
+    componentsList.push(component);
+    return component;
+  }
+  
+  simp.__proto__ = {
+    component: createComponent,
+    componentsList: () => componentsList
+  }
+  
+  window.simp = simp;
 })();
